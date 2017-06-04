@@ -197,7 +197,7 @@
         onload (str
                  "(do "
                  "  (def ^:dynamic *cljs-config* (quote " config "))"
-                 "  (def ^:dynamic *build-config* " build ")"
+                 "  (def ^:dynamic *build-config* (quote " build "))"
                  "  nil)")
         args (concat ["-cp" cp "clojure.main" "-e" onload script-path] args)]
     (spawn-sync java-path (clj->js args) #js{:stdio "inherit"})))
