@@ -10,7 +10,6 @@
 (def fs-extra (js/require "fs-extra"))
 (def request-sync (js/require "sync-request"))
 (def request (js/require "request"))
-(def existsSync (js/require "exists-sync"))
 (def colors (js/require "colors/safe"))
 (def ProgressBar (js/require "progress"))
 
@@ -23,7 +22,7 @@
       (starts-with? path "https://")))
 
 (defn path-exists? [path]
-  (existsSync path))
+  (.existsSync fs path))
 
 (defn slurp [path]
   (if (url? path)
@@ -56,13 +55,18 @@
         (.on response "end" #(println))))))
 
 (defn download-progress [url path label]
-  (let [file (.createWriteStream fs path)
+  (let [partial-path (str path ".partial")
+        file (.createWriteStream fs partial-path)
         req (request url)
         c (chan)]
     (hook-progress-bar req label)
     (.pipe req file)
-    (.on req "error" #(do (.close file) (.exit js/process -1)))
-    (.on req "end" #(put! c 1))
+    (.on req "error"
+      #(do (.close file)
+           (.exit js/process -1)))
+    (.on req "end"
+      #(do (.moveSync fs-extra partial-path path)
+           (put! c 1)))
     c))
 
 (defn color [col text]

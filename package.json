@@ -16,9 +16,8 @@
   ],
   "dependencies": {
     "colors": "1.1.2",
-    "exists-sync": "0.0.3",
-    "fs-extra": "0.28.0",
-    "lumo-cljs": "^1.4.1",
+    "fs-extra": "^3.0.1",
+    "lumo-cljs": "^1.5.0",
     "node-jre": "0.2.1",
     "request": "2.81.0",
     "sync-request": "3.0.0"
