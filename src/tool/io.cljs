@@ -12,6 +12,7 @@
 (def request (js/require "request"))
 (def colors (js/require "colors/safe"))
 (def ProgressBar (js/require "progress"))
+(def targz (js/require "targz"))
 
 (def request-opts
   #js{:headers
@@ -34,11 +35,17 @@
   (.writeFileSync fs path text))
 
 (defn mkdirs [path]
-  (.mkdirsSync fs-extra path))
+  (.mkdirsSync fs-extra path)
+  path)
 
 (defn rm [path]
   (try (.unlink fs path)
        (catch js/Error e nil)))
+
+(defn child-dirs [parent-dir]
+  (->> (.readdirSync fs parent-dir)
+       (map #(str parent-dir "/" %))
+       (filter #(.isDirectory (.statSync fs %)))))
 
 (defn download [url path]
   (let [response (request-sync "GET" url request-opts)
@@ -54,10 +61,10 @@
         (.on response "data" #(.tick bar (.-length %)))
         (.on response "end" #(println))))))
 
-(defn download-progress [url path label]
+(defn download-progress [url path label & {:keys [opts]}]
   (let [partial-path (str path ".partial")
         file (.createWriteStream fs partial-path)
-        req (request url)
+        req (request url (clj->js opts))
         done-chan (chan)]
     (hook-progress-bar req label)
     (.pipe req file)
@@ -72,6 +79,16 @@
     (.on file "finish"
       (fn []
         (.moveSync fs-extra partial-path path)
+        (put! done-chan 1)))
+    done-chan))
+
+(defn extract-targz [src dest]
+  (let [done-chan (chan)]
+    (.decompress targz #js{:src src :dest dest}
+      (fn [err]
+        (when err
+          (js/console.log "Failed to extract" src "due to error:" err)
+          (.exit js/process -1))
         (put! done-chan 1)))
     done-chan))
 

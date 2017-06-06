@@ -17,6 +17,19 @@
 (def file-figwheel-script (str js/__dirname "/script/figwheel.clj"))
 
 ;;---------------------------------------------------------------------------
+;; Misc
+;;---------------------------------------------------------------------------
+
+(def windows? (= "win32" js/process.platform))
+
+(def child-process (js/require "child_process"))
+(def spawn-sync (.-spawnSync child-process))
+
+(defn exit-error [& args]
+  (apply js/console.error args)
+  (js/process.exit 1))
+
+;;---------------------------------------------------------------------------
 ;; User Config
 ;;---------------------------------------------------------------------------
 
@@ -46,10 +59,83 @@
 
 ;;---------------------------------------------------------------------------
 ;; Java
+;;
+;; Adapted from `node-jre` package for auto-installing Java.
+;; We are not using `node-jre` here because it requires performing the java
+;; download at install time rather than conditionally at runtime.
 ;;---------------------------------------------------------------------------
 
-(def jre (js/require "node-jre"))
-(def java-path (jre.driver))
+(def java-path "java")
+(def os (js/require "os"))
+
+(defn java-installed? []
+  (zero? (.-status (spawn-sync "java" #js["-version"]))))
+
+;; version and url info from:
+;; http://www.oracle.com/technetwork/java/javase/downloads/jre8-downloads-2133155.html
+(def java-version "8u131")
+(def java-build "b11")
+(def java-hash "d54c1d3a095b4ff2b6607d096fa80163")
+
+(defn java-url [platform arch]
+  (str
+    "https://download.oracle.com/otn-pub/java/jdk/"
+    java-version "-" java-build "/" java-hash "/"
+    "jre-" java-version "-" platform "-" arch ".tar.gz")) ; filename
+
+(defn java-url-opts []
+  {:rejectUnauthorized false
+   :agent false
+   :headers
+   {:connection "keep-alive"
+    :Cookie "gpw_e24=http://www.oracle.com/; oraclelicense=accept-securebackup-cookie"}})
+
+(defn java-meta []
+  (let [arch (.arch os)
+        platform (.platform os)]
+    (cond-> {}
+      (= platform "darwin") (assoc :platform "macosx"  :binary "Contents/Home/bin/java")
+      (= platform "win32")  (assoc :platform "windows" :binary "bin/javaw.exe")
+      (= platform "linux")  (assoc :platform "linux"   :binary "bin/java")
+      (= platform "sunos")  (assoc :platform "solaris" :binary "bin/java")
+      (= arch "ia32")       (assoc :arch "i586")
+      (= arch "x64")        (assoc :arch "x64"))))
+
+(defn ensure-java-installable! [rationale]
+  (let [{:keys [arch platform]} (java-meta)]
+    (when (or (nil? arch)
+              (nil? platform)
+              (and (= platform "solaris") (not= arch "x64")))
+      (exit-error
+        rationale
+        "Unfortunately we cannot auto-install Java on your platform."
+        "Please manually install Java if possible and try again here afterwards."))))
+
+(defn ensure-java-embed! [rationale]
+  (go
+    (ensure-java-installable! rationale)
+    (let [{:keys [arch platform binary]} (java-meta)
+          url (java-url platform arch)
+
+          tar-path (str js/__dirname "/jre-" java-version "-" java-build ".tar.gz")
+          extract-path (io/mkdirs (str js/__dirname "/java"))
+          jre-path #(first (io/child-dirs extract-path))
+          binary-path #(str (jre-path) "/" binary)]
+
+      (when (or (nil? (jre-path))
+                (not (io/path-exists? (binary-path))))
+        (println)
+        (println rationale "Let us install it for you!")
+        (<! (io/download-progress url tar-path (str "Java Runtime " java-version "-" java-build)
+              :opts (java-url-opts)))
+        (<! (io/extract-targz tar-path extract-path)))
+
+      (set! java-path (binary-path)))))
+
+(defn ensure-java! [rationale]
+  (go
+    (when-not (java-installed?)
+      (<! (ensure-java-embed! rationale)))))
 
 ;;---------------------------------------------------------------------------
 ;; JARs used for compiling w/ JVM
@@ -66,19 +152,6 @@
 (defn get-jvm-jars []
   [(file-cljs-jar (:cljs-version config))
    (file-fig-jar (:figwheel-version config))])
-
-;;---------------------------------------------------------------------------
-;; Misc
-;;---------------------------------------------------------------------------
-
-(def windows? (= "win32" js/process.platform))
-
-(def child-process (js/require "child_process"))
-(def spawn-sync (.-spawnSync child-process))
-
-(defn exit-error [& args]
-  (apply js/console.error args)
-  (js/process.exit 1))
 
 ;;---------------------------------------------------------------------------
 ;; Emit errors or perform corrective actions if requirements not met
@@ -249,26 +322,30 @@
   (println))
 
 (defn -main [task & args]
-  (load-config!)
-  (cond
-    ;; Run Lumo REPL if no args provided
-    (nil? task) (do (print-welcome) (run-lumo nil))
+  (go
+    (load-config!)
+    (when (:dependencies config)
+      (<! (ensure-java! "Dependency resolution currently requires Java.")))
 
-    ;; Run a ClojureScript source file if first arg
-    (string/ends-with? task ".cljs") (run-lumo (cons task args))
+    (cond
+      ;; Run Lumo REPL if no args provided
+      (nil? task) (do (print-welcome) (run-lumo nil))
 
-    ;; Install ClojureScript dependencies
-    (= task "install") (do (ensure-config!) (install-deps))
+      ;; Run a ClojureScript source file if first arg
+      (string/ends-with? task ".cljs") (run-lumo (cons task args))
 
-    ;; Otherwise, we will use the JVM ClojureScript compiler.
-    :else
-    (do
-      (print-welcome)
-      (ensure-config!)
-      (go
+      ;; Install ClojureScript dependencies
+      (= task "install") (do (ensure-config!) (install-deps))
+
+      ;; Otherwise, we will use the JVM ClojureScript compiler.
+      :else
+      (do
+        (print-welcome)
+        (ensure-config!)
         (<! (ensure-cljs-version!))
         (when (#{"build" "watch" "figwheel"} task)
           (<! (ensure-fig-version!)))
+        (<! (ensure-java! "Compilation to JavaScript currently requires Java."))
         (cond
           (= task "build") (run-api-script :build-id (first args) :script-path file-build-script)
           (= task "watch") (run-api-script :build-id (first args) :script-path file-watch-script)

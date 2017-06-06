@@ -20,8 +20,8 @@
     "colors": "1.1.2",
     "fs-extra": "^3.0.1",
     "lumo-cljs": "^1.5.0",
-    "node-jre": "0.2.1",
     "request": "2.81.0",
-    "sync-request": "3.0.0"
+    "sync-request": "3.0.0",
+    "targz": "^1.0.1"
   }
 }

@@ -2,3 +2,5 @@
 cljs-*.jar
 figwheel-*.jar
 
+java/
+jre-*.tar.gz
