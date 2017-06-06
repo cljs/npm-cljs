@@ -1,3 +1,7 @@
+## 1.1.0
+
+- Only download Java if and when necessary
+
 ## 1.0.0
 
 - Package name `cljs` transferred to this project in June 2017
