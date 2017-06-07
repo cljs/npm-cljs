@@ -1,3 +1,7 @@
+## 1.2.0
+
+- Restart watch task if cljs.edn changes (for dependencies and compiler options)
+
 ## 1.1.0
 
 - Only download Java if and when necessary
