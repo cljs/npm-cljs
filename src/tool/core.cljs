@@ -1,6 +1,6 @@
 (ns tool.core
   (:require-macros
-    [cljs.core.async.macros :refer [go]])
+    [cljs.core.async.macros :refer [go go-loop]])
   (:require
     [cljs.core.async :refer [<!]]
     [clojure.string :as string]
@@ -23,6 +23,7 @@
 (def windows? (= "win32" js/process.platform))
 
 (def child-process (js/require "child_process"))
+(def spawn (.-spawn child-process))
 (def spawn-sync (.-spawnSync child-process))
 
 (defn exit-error [& args]
@@ -56,6 +57,25 @@
 (defn load-config! []
   (when (io/path-exists? file-config-edn)
     (set! config (transform-config (io/slurp-edn file-config-edn)))))
+
+(def dep-keys
+  "Dependencies are found in these config keys"
+  [:dependencies :dev-dependencies])
+
+(defn build-dependent-config
+  "Any values in the config that may change the given build"
+  [cfg build-id]
+  (-> cfg
+      (select-keys dep-keys)
+      (assoc-in [:builds build-id] (get-in cfg [:builds build-id]))))
+
+(defn wait-for-config-change [build-id]
+  (go-loop [prev config]
+    (<! (io/wait-for-change file-config-edn))
+    (load-config!)
+    (when (= (build-dependent-config prev build-id)
+             (build-dependent-config config build-id))
+      (recur config))))
 
 ;;---------------------------------------------------------------------------
 ;; Java
@@ -205,10 +225,6 @@
 
 (declare install-deps)
 
-(def dep-keys
-  "Dependencies are found in these config keys"
-  [:dependencies :dev-dependencies])
-
 (defn ensure-deps!
   "If dependencies have changed since last run, resolve and download them."
   []
@@ -284,7 +300,7 @@
                  "  (def ^:dynamic *build-config* (quote " build "))"
                  "  nil)")
         args (concat ["-cp" cp "clojure.main" "-e" onload script-path] args)]
-    (spawn-sync java-path (clj->js args) #js{:stdio "inherit"})))
+    (spawn java-path (clj->js args) #js{:stdio "inherit"})))
 
 ;;---------------------------------------------------------------------------
 ;; Lumo is the fastest way to run ClojureScript on Node.
@@ -322,7 +338,7 @@
   (println))
 
 (defn -main [task & args]
-  (go
+  (go-loop [i 0]
     (load-config!)
     (when (:dependencies config)
       (<! (ensure-java! "Dependency resolution currently requires Java.")))
@@ -340,7 +356,8 @@
       ;; Otherwise, we will use the JVM ClojureScript compiler.
       :else
       (do
-        (print-welcome)
+        (when (zero? i) (print-welcome))
+
         (ensure-config!)
         (<! (ensure-cljs-version!))
         (when (#{"build" "watch" "figwheel"} task)
@@ -348,9 +365,17 @@
         (<! (ensure-java! "Compilation to JavaScript currently requires Java."))
         (cond
           (= task "build") (run-api-script :build-id (first args) :script-path file-build-script)
-          (= task "watch") (run-api-script :build-id (first args) :script-path file-watch-script)
           (= task "repl") (run-api-script :build-id (first args) :script-path file-repl-script)
           (= task "figwheel") (run-api-script :build-id (first args) :script-path file-figwheel-script)
+
+          (= task "watch")
+          (let [build-id (first args)
+                child (run-api-script :build-id build-id :script-path file-watch-script)]
+            (<! (wait-for-config-change (keyword build-id)))
+            (.kill child "SIGINT")
+            (println "\nConfig for" (keyword build-id) "has changed. Restarting to ensure they take effect...\n")
+            (recur (inc i)))
+
           (string/ends-with? task ".clj") (run-api-script :script-path task :args args)
           :else (exit-error "Unrecognized task:" task))))))
 

@@ -13,6 +13,7 @@
 (def colors (js/require "colors/safe"))
 (def ProgressBar (js/require "progress"))
 (def targz (js/require "targz"))
+(def chokidar (js/require "chokidar"))
 
 (def request-opts
   #js{:headers
@@ -91,6 +92,15 @@
           (.exit js/process -1))
         (put! done-chan 1)))
     done-chan))
+
+(defn wait-for-change [path]
+  (let [wait-chan (chan)
+        watcher (.watch chokidar path)]
+    (.on watcher "change"
+      (fn []
+        (.close watcher)
+        (put! wait-chan 1)))
+    wait-chan))
 
 (defn color [col text]
   (let [f (aget colors (name col))]
