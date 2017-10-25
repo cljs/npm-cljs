@@ -1,4 +1,6 @@
-> __NOTE__: work in progress
+> __STATUS__: [shadow-cljs] seems to be a promising build tool, so I'm pausing this tool until I learn if a "composite" starter tool still has a role to play here.
+
+[shadow-cljs]:https://github.com/thheller/shadow-cljs
 
 # ClojureScript starter tool
 
