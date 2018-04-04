@@ -1,5 +1,6 @@
-> __STATUS__: [shadow-cljs] seems to be a promising build tool, so I'm pausing this tool until I learn if a "composite" starter tool still has a role to play here.
+> __OBSOLETE__: ClojureScript now uses the `clj -m cljs.main` command for its [Quick Start], which is a great first-run experience supported by the core team that didn't exist when I started this tool.  Also, [shadow-cljs] does a great job of being both easy to use and supports a lot more production-level features not supported by core. 
 
+[Quick Start]:https://clojurescript.org/guides/quick-start
 [shadow-cljs]:https://github.com/thheller/shadow-cljs
 
 # ClojureScript starter tool
